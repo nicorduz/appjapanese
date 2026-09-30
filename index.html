@@ -230,6 +230,32 @@ textarea.inp{min-height:120px;resize:vertical;line-height:1.6}
 .navb[aria-current="true"] svg{stroke-width:2}
 .hidden{display:none!important}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- asistente IA ---- */
+.aibtn{flex:none;width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:#fff;font-size:17px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.aibtn:active{transform:scale(.94)}
+.aiov{position:fixed;inset:0;z-index:70;background:rgba(23,34,31,.42);display:flex;align-items:flex-end;justify-content:center;animation:fade .16s ease}
+.aipanel{background:var(--card);width:100%;max-width:640px;border-radius:22px 22px 0 0;border:1px solid var(--line);box-shadow:var(--shadow);padding:16px 16px calc(18px + env(safe-area-inset-bottom));max-height:88dvh;overflow:auto}
+.aihead{display:flex;align-items:center;justify-content:space-between;font-weight:800;font-size:15px;margin-bottom:12px}
+.aihead .x{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:16px}
+.aictx{background:var(--soft);border-radius:13px;padding:11px 13px;font-size:14px;line-height:1.7;color:#3a4642}
+.aichips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.aichip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:600;color:var(--ink)}
+.aichip:active{background:var(--soft)}
+.aiin{width:100%;margin-top:12px;border:1px solid var(--line);border-radius:13px;padding:13px;font-size:16px;background:#fff;resize:vertical}
+.aiin:focus{outline:2px solid var(--indigo);border-color:var(--indigo)}
+.aians{margin-top:14px}
+.aibubble{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 15px;font-size:15px;line-height:1.75;animation:fade .18s ease}
+.aibubble.err{background:#fdf3f2;border-color:#e5b4af;color:var(--bad)}
+.aibubble.loading{color:var(--muted);display:flex;align-items:center;gap:9px}
+.aibubble ruby rt{font-size:.62em;color:var(--muted);font-weight:600}
+.ainokey{margin-top:12px;background:var(--soft);border-radius:13px;padding:13px;font-size:14px;line-height:1.6;color:#3a4642}
+.aitoggle{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:14px;color:var(--ink)}
+.aitoggle input{width:18px;height:18px}
+.aidots{display:inline-flex;gap:4px}
+.aidots i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:aiblink 1s infinite}
+.aidots i:nth-child(2){animation-delay:.16s}.aidots i:nth-child(3){animation-delay:.32s}
+@keyframes aiblink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 </style>
 </head>
 <body>
@@ -275,7 +301,7 @@ const SEED={
 const KEY="jp.study.v1";
 const DEFAULT={userVocab:[],userGrammar:[],userTopics:{},theory:{},hidden:{},star:{},srs:{},learn:{},
   stats:{streak:0,best:0,last:null,reviews:0,history:{},intake:{},learnSeq:0},
-  settings:{dailyGoal:20,newPerDay:15,dir:"jp2es",learnGoal:8,dailyNew:5}};
+  settings:{dailyGoal:20,newPerDay:15,dir:"jp2es",learnGoal:8,dailyNew:5,aiKey:"",aiModel:"gemini-2.5-flash",aiOn:true}};
 let S;
 try{S=Object.assign(structuredClone(DEFAULT),JSON.parse(localStorage.getItem(KEY)||"{}"));}
 catch(e){S=structuredClone(DEFAULT);}
@@ -694,6 +720,7 @@ function paintSession(){
       <button class="x" data-act="closeSess" aria-label="Cerrar">✕</button>
       <div class="sprog"><i style="width:${progW}%"></i></div>
       <span class="smeta">${meta}</span>
+      ${S.settings.aiOn!==false?'<button class="aibtn" data-act="aiAsk" aria-label="Preguntar a la IA">\u{1F916}</button>':''}
     </div>
     <div class="sbody"><div id="qhost"></div></div>
   </div>`;
@@ -965,6 +992,15 @@ views.stats=function(){
     <div class="field"><label>Meta de palabras aprendidas por día</label><input class="inp" id="s_learn" type="number" min="1" max="100" value="${S.settings.learnGoal}"></div>
     <div style="margin-top:14px"><button class="btn" data-act="saveSettings">Guardar ajustes</button></div>
   </div>
+  <h2 class="sec">Asistente de IA (Gemini)</h2>
+  <div class="card pad">
+    <p class="hint" style="margin-top:0">Durante el estudio puedes preguntarle a Gemini sobre cualquier tarjeta (vocabulario o gramática). Consigue una clave gratis en <b>aistudio.google.com/app/apikey</b> y pégala aquí. Se guarda solo en este teléfono; no se sube a ninguna parte.</p>
+    <div class="field"><label>Clave API de Gemini</label><input class="inp" id="ai_key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…" value="${esc(S.settings.aiKey||"")}"></div>
+    <div class="field"><label>Modelo</label><input class="inp" id="ai_model" autocapitalize="off" spellcheck="false" placeholder="gemini-2.5-flash" value="${esc(S.settings.aiModel||"gemini-2.5-flash")}"></div>
+    <p class="hint" style="margin:8px 2px 0">Si las respuestas salen vacías, prueba con <b>gemini-2.5-flash-lite</b>. El plan gratis tiene límite por minuto/día; para uso personal sobra.</p>
+    <label class="aitoggle"><input type="checkbox" id="ai_on" ${S.settings.aiOn!==false?"checked":""}> Mostrar el botón \u{1F916} durante el estudio</label>
+    <div style="margin-top:14px"><button class="btn" data-act="saveAI">Guardar asistente</button></div>
+  </div>
   <h2 class="sec">Copia de seguridad</h2>
   <div class="card pad">
     <p class="hint" style="margin-top:0">Tus datos viven solo en este teléfono. Exporta una copia para no perderla o para pasarla a otro dispositivo.</p>
@@ -1021,6 +1057,8 @@ document.body.addEventListener("click",e=>{
     case "lessonOpen":{lessonOpen=a.dataset.id;render();window.scrollTo(0,0);break;}
     case "lessonBack":{lessonOpen=null;render();window.scrollTo(0,0);break;}
     case "closeSess":closeSession();break;
+    case "aiAsk":openAIPanel();break;
+    case "saveAI":{const k=$("#ai_key"),md=$("#ai_model"),on=$("#ai_on");if(k)S.settings.aiKey=k.value.trim();if(md)S.settings.aiModel=(md.value.trim()||"gemini-2.5-flash");if(on)S.settings.aiOn=on.checked;save();toast("Asistente de IA guardado");break;}
     case "againSess":{closeSessionSilent();
       if(currentNav==="grammar"){
         if(gramCfg.mode==="cards"){const list=pickGrammarCards().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));startSession(list,"flip");}
@@ -1099,6 +1137,89 @@ function doExport(){
   const url=URL.createObjectURL(blob);const a=document.createElement("a");
   a.href=url;a.download="japones-copia-"+today()+".json";document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);toast("Copia descargada");
+}
+
+/* ---------- asistente IA (Gemini) ---------- */
+function aiPlainText(x){return String(x==null?"":x).replace(/<rt>[\s\S]*?<\/rt>/g,"").replace(/<[^>]+>/g,"");}
+function rubyize(x){return esc(x).replace(/([一-龯々〆ヶ]+)[（(]\s*([぀-ヿー]+)\s*[）)]/g,'<ruby>$1<rt>$2</rt></ruby>');}
+function aiContext(it){
+  if(!it)return{text:"(sin tarjeta)",chips:[]};
+  if(it.type==="vocab"){
+    const v=it.data;const rd=(v.reading&&v.reading!==v.jp)?"（"+v.reading+"）":"";
+    let t="Palabra: "+v.jp+rd+" = "+v.es;
+    if(v.exJp)t+="\nEjemplo: "+v.exJp+(v.exEs?" → "+v.exEs:"");
+    return{text:t,chips:["¿Cómo se usa esta palabra?","Dame 2 ejemplos más","Explica los kanji","Matices o sinónimos"]};
+  }
+  if(it.type==="gflash"){
+    const g=it.data;let t="Punto de gramática: "+g.pattern+"\nRegla: "+g.rule;
+    if(g.exJp)t+="\nEjemplo: "+g.exJp;
+    return{text:t,chips:["Explícalo con más detalle","Dame 2 ejemplos más","¿Cuándo NO se usa?","Diferencia con formas parecidas"]};
+  }
+  const q=it.data;const corr=(q.answers||[]).map(i=>q.options[i]).join(" / ");
+  let t="Frase: "+aiPlainText(q.prompt)+"\nOpciones: "+(q.options||[]).join(" | ")+"\nCorrecta: "+corr;
+  if(q.explanation)t+="\nExplicación: "+q.explanation;
+  return{text:t,chips:["¿Por qué es la correcta?","Desglosa la frase","Dame 2 ejemplos más","Diferencia con las otras opciones"]};
+}
+async function askGemini(question,context){
+  const key=(S.settings.aiKey||"").trim();
+  if(!key)throw new Error("nokey");
+  const model=(S.settings.aiModel||"gemini-2.5-flash").trim();
+  const sys="Eres un tutor de japonés para un estudiante hispanohablante de nivel intermedio. "
+    +"Responde SIEMPRE en español, breve y claro, sin tablas. Cuando escribas japonés, pon la lectura "
+    +"de cada kanji entre paréntesis justo después, así: 食(た)べる. "
+    +"Esta es la tarjeta que está estudiando ahora:\n"+context;
+  const url="https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent";
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},
+    body:JSON.stringify({system_instruction:{parts:[{text:sys}]},
+      contents:[{role:"user",parts:[{text:question}]}],
+      generationConfig:{temperature:0.4,maxOutputTokens:1024}})});
+  if(!r.ok){let m="";try{const j=await r.json();m=j&&j.error&&j.error.message||"";}catch(e){}throw new Error("http:"+r.status+(m?" · "+m:""));}
+  const d=await r.json();const c=d.candidates&&d.candidates[0];
+  const txt=c&&c.content&&c.content.parts?c.content.parts.map(p=>p.text||"").join(""):"";
+  if(!txt)throw new Error("empty:"+((c&&c.finishReason)||"?"));
+  return txt.trim();
+}
+function aiErrMsg(err){
+  const m=String(err&&err.message||err);
+  if(m==="nokey")return "Falta la clave de Gemini. Ponla en Progreso → Asistente de IA.";
+  if(m.indexOf("empty")===0)return "La IA no devolvió texto ("+m.slice(6)+"). Reformula la pregunta o cambia de modelo en Ajustes.";
+  if(m.indexOf("http:401")===0||m.indexOf("http:403")===0)return "Clave inválida o restringida. Revisa tu API key y sus restricciones. ["+m+"]";
+  if(m.indexOf("http:429")===0)return "Límite del plan gratis por ahora. Espera un poco y reinténtalo. ["+m+"]";
+  if(m.indexOf("http:404")===0||m.indexOf("http:400")===0)return "Modelo no válido. Revisa el nombre del modelo en Ajustes. ["+m+"]";
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m))return "Sin conexión: la IA necesita internet (el resto del app funciona offline).";
+  return "Error: "+m;
+}
+function openAIPanel(){
+  if(!sess)return;const it=sess.queue[sess.pos];const ctx=aiContext(it);
+  const hasKey=!!(S.settings.aiKey||"").trim();
+  const el=document.createElement("div");el.className="aiov";el.id="aiOverlay";
+  el.innerHTML='<div class="aipanel">'
+    +'<div class="aihead"><span>\u{1F916} Preguntar a la IA</span><button class="x" id="aiClose" aria-label="Cerrar">✕</button></div>'
+    +'<div class="aictx jp">'+rubyize(ctx.text).replace(/\n/g,"<br>")+'</div>'
+    +(hasKey
+      ?'<div class="aichips">'+ctx.chips.map(c=>'<button class="aichip" data-q="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'
+        +'<textarea class="aiin" id="aiq" rows="2" placeholder="Escribe tu pregunta sobre esta tarjeta…"></textarea>'
+        +'<div class="row" style="margin-top:10px"><button class="btn" id="aiSend">Preguntar</button></div>'
+        +'<div id="aians" class="aians"></div>'
+      :'<div class="ainokey">Para usar la IA, pega tu clave gratis de Gemini en <b>Progreso → Asistente de IA</b>. Se guarda solo en este teléfono.</div>')
+    +'</div>';
+  document.body.appendChild(el);
+  const close=()=>el.remove();
+  el.addEventListener("click",e=>{if(e.target===el)close();});
+  $("#aiClose").addEventListener("click",close);
+  if(!hasKey)return;
+  const qbox=$("#aiq"),ansBox=$("#aians");let busy=false;
+  const send=async()=>{
+    const q=qbox.value.trim();if(!q||busy)return;busy=true;$("#aiSend").disabled=true;
+    ansBox.innerHTML='<div class="aibubble loading"><span class="aidots"><i></i><i></i><i></i></span>Pensando…</div>';
+    try{const out=await askGemini(q,ctx.text);ansBox.innerHTML='<div class="aibubble jp">'+rubyize(out).replace(/\n/g,"<br>")+'</div>';}
+    catch(err){ansBox.innerHTML='<div class="aibubble err">'+esc(aiErrMsg(err))+'</div>';}
+    finally{busy=false;const b=$("#aiSend");if(b)b.disabled=false;}
+  };
+  el.querySelectorAll(".aichip").forEach(b=>b.addEventListener("click",()=>{qbox.value=b.dataset.q;send();}));
+  $("#aiSend").addEventListener("click",send);
+  qbox.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();send();}});
+  setTimeout(()=>{qbox.focus();},80);
 }
 
 /* ---------- boot ---------- */
