@@ -256,6 +256,11 @@ textarea.inp{min-height:120px;resize:vertical;line-height:1.6}
 .aidots i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:aiblink 1s infinite}
 .aidots i:nth-child(2){animation-delay:.16s}.aidots i:nth-child(3){animation-delay:.32s}
 @keyframes aiblink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.gstruct{font-size:20px;line-height:1.6;font-weight:650;color:var(--ink)}
+.gtok{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans CJK JP","Noto Sans JP",ui-sans-serif,sans-serif;background:#eef0ff;border:1px solid #d7dcff;color:var(--indigo);border-radius:7px;padding:1px 7px;margin:0 2px;font-weight:800;white-space:nowrap}
+.exlabel{font-size:12px;letter-spacing:.03em;color:var(--muted);font-weight:800;margin:0 2px 6px}
+.myex{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:16px;background:#fff;resize:vertical}
+.myex:focus{outline:2px solid var(--indigo);border-color:var(--indigo)}
 </style>
 </head>
 <body>
@@ -299,15 +304,18 @@ const SEED={
   gpoints: JSON.parse($("#seedGpoints").textContent),
 };
 const KEY="jp.study.v1";
-const DEFAULT={userVocab:[],userGrammar:[],userTopics:{},theory:{},hidden:{},star:{},srs:{},learn:{},
-  stats:{streak:0,best:0,last:null,reviews:0,history:{},intake:{},learnSeq:0},
-  settings:{dailyGoal:20,newPerDay:15,dir:"jp2es",learnGoal:8,dailyNew:5,aiKey:"",aiModel:"gemini-2.5-flash",aiOn:true}};
+const DEFAULT={userVocab:[],userGrammar:[],userTopics:{},theory:{},hidden:{},star:{},srs:{},learn:{},myEx:{},
+  stats:{streak:0,best:0,last:null,reviews:0,history:{},intake:{},gintake:{},learnSeq:0},
+  settings:{dailyGoal:20,newPerDay:15,dir:"jp2es",learnGoal:8,dailyNew:5,gDailyNew:5,aiProxy:"",aiToken:"",aiModel:"gpt-4o-mini",aiOn:true,grammarPick:[]}};
 let S;
 try{S=Object.assign(structuredClone(DEFAULT),JSON.parse(localStorage.getItem(KEY)||"{}"));}
 catch(e){S=structuredClone(DEFAULT);}
 for(const k in DEFAULT){ if(S[k]==null) S[k]=structuredClone(DEFAULT[k]); }
 S.stats=Object.assign(structuredClone(DEFAULT.stats),S.stats);
 S.settings=Object.assign(structuredClone(DEFAULT.settings),S.settings);
+if(/gemini/i.test(S.settings.aiModel||""))S.settings.aiModel="gpt-4o-mini";
+if(!S.stats.gintake)S.stats.gintake={};
+if(!S.myEx)S.myEx={};
 let saveT=null;
 function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast("No se pudo guardar (almacenamiento lleno)");}},120);}
 
@@ -343,7 +351,7 @@ function markLearned(key){const t=today();const c=S.learn[key];
   save();}
 function markReview(key){const prev=learnStatus(key);const c=S.learn[key];
   S.learn[key]={status:"review",since:(c&&c.since)||today(),at:Date.now()};
-  if(prev==="new"){const t=today();S.stats.intake[t]=(S.stats.intake[t]||0)+1;}
+  if(prev==="new"){const t=today();const bkt=key.indexOf("gp:")===0?"gintake":"intake";if(!S.stats[bkt])S.stats[bkt]={};S.stats[bkt][t]=(S.stats[bkt][t]||0)+1;}
   save();}
 function vocabItems(){return vocabAll().map(v=>({key:"v:"+v.id,type:"vocab",data:v}));}
 function notLearnedVocab(){return vocabAll().filter(v=>learnStatus("v:"+v.id)!=="learned");}
@@ -357,6 +365,31 @@ function notLearnedCount(){return reviewSetVocab().length;}
 function learnedTodayCount(){const t=today();return learnedVocabList().filter(x=>x.on===t).length;}
 function intakeToday(){return S.stats.intake[today()]||0;}
 function remainingIntake(){return Math.max(0,(S.settings.dailyNew||5)-intakeToday());}
+/* ---------- grammar daily (replica del flujo de vocabulario) ---------- */
+function gSelCats(){ if(gramCfg.cats&&gramCfg.cats.size)return gramCfg.cats; const u=new Set();GPOINTS.forEach(g=>u.add(g.cat));return u; }
+function gReviewSet(){const cs=gSelCats();return GPOINTS.filter(g=>cs.has(g.cat)&&learnStatus("gp:"+g.id)==="review");}
+function gNewPool(){const cs=gSelCats();return GPOINTS.filter(g=>cs.has(g.cat)&&learnStatus("gp:"+g.id)==="new");}
+function gIntakeToday(){return (S.stats.gintake&&S.stats.gintake[today()])||0;}
+function gRemainingIntake(){return Math.max(0,(S.settings.gDailyNew||5)-gIntakeToday());}
+function gNotLearnedCount(){return gReviewSet().length;}
+function nextDailyGrammar(lastKey){
+  if(gRemainingIntake()>0){const np=gNewPool();if(np.length){const g=np[Math.floor(Math.random()*np.length)];return {key:"gp:"+g.id,type:"gflash",data:g,phase:"new"};}}
+  let pool=gReviewSet();
+  if(pool.length>1&&lastKey){const f=pool.filter(g=>("gp:"+g.id)!==lastKey);if(f.length)pool=f;}
+  if(pool.length){const g=pool[Math.floor(Math.random()*pool.length)];return {key:"gp:"+g.id,type:"gflash",data:g,phase:"review"};}
+  return null;
+}
+function saveGrammarPick(){S.settings.grammarPick=gramCfg.cats?[...gramCfg.cats]:[];save();}
+/* glosa: estructura casi toda en espanol, japones solo en el token gramatical */
+const GTERMS=[["使役受身形","forma causativa-pasiva"],["使役形","forma causativa"],["受身形","forma pasiva"],["可能形","forma potencial"],["意向形","forma volitiva"],["命令形","forma imperativa"],["辞書形","forma de diccionario"],["普通形","forma simple"],["連体形","forma atributiva"],["否定形","forma negativa"],["過去形","forma pasada"],["ます形","forma ます"],["て形","forma て"],["た形","forma た"],["形容動詞","adjetivo-な"],["形容詞","adjetivo"],["動詞","verbo"],["名詞","sustantivo"],["副詞","adverbio"],["助詞","partícula"],["疑問詞","interrogativo"],["主語","sujeto"],["述語","predicado"],["数字","número"],["文","oración"],["節","cláusula"],["句","frase"]];
+function glossPattern(pat){
+  let x=String(pat||""); const L="␞",R="␟";
+  for(const t of GTERMS){ if(x.indexOf(t[0])>=0)x=x.split(t[0]).join(L+t[1]+R); }
+  const JP=/[぀-ヿ㐀-鿿ㇰ-ㇿｦ-ﾟ々〆ヶ]+/g;
+  let out="",last=0,m; const clean=z=>esc(z).split(L).join("").split(R).join("");
+  while((m=JP.exec(x))){ out+=clean(x.slice(last,m.index)); out+='<span class="gtok">'+esc(m[0])+'</span>'; last=m.index+m[0].length; }
+  out+=clean(x.slice(last)); return out;
+}
 /* next card for the daily flow: intake new until the day's quota of not-learned, then drill the accumulated set */
 function nextDailyItem(lastKey){
   if(remainingIntake()>0){const np=newPoolVocab();if(np.length){const v=np[Math.floor(Math.random()*np.length)];return {key:"v:"+v.id,type:"vocab",data:v,phase:"new"};}}
@@ -561,22 +594,32 @@ function lessonListHTML(){
 views.grammar=function(){
   const T=allTopics();
   const keys=Object.keys(T);
-  if(gramCfg.cats===null){const u=new Set();grammarCats("quiz").forEach(c=>u.add(c.slug));grammarCats("cards").forEach(c=>u.add(c.slug));gramCfg.cats=u;}
+  if(gramCfg.cats===null){gramCfg.cats=new Set(S.settings.grammarPick||[]);}
   const amounts=[5,10,20,"all"];
   const cats=grammarCats(gramCfg.mode);
   const modeSeg=`<div class="seg" data-ggroup="gmode" style="margin-top:16px">
       <button class="chip" data-v="quiz" aria-pressed="${gramCfg.mode==='quiz'}">Quiz</button>
       <button class="chip" data-v="cards" aria-pressed="${gramCfg.mode==='cards'}">Tarjetas</button></div>`;
-  const selAll=`<div class="label" style="margin-top:16px">Categorías <button class="btn sm ghost" data-act="gCatAll" style="width:auto;padding:4px 10px">${cats.every(c=>gramCfg.cats.has(c.slug))?"Ninguna":"Todas"}</button></div>`;
+  const selAll=`<div class="label" style="margin-top:16px">Temas que quieres estudiar <button class="btn sm ghost" data-act="gCatAll" style="width:auto;padding:4px 10px">${cats.length&&cats.every(c=>gramCfg.cats.has(c.slug))?"Quitar todos":"Seleccionar todos"}</button></div>`;
   const catChips=`<div class="topicgrid">${cats.map(c=>`
       <button class="topicbtn" data-cat="${c.slug}" aria-pressed="${gramCfg.cats.has(c.slug)}">
         <span class="dot" style="width:11px;height:11px;border-radius:50%;background:${c.color}"></span>
         <span class="nm"><span class="jp">${esc(c.label)}</span></span>
         <span class="ct">${c.count}</span>
       </button>`).join("")}</div>`;
+  const gdn=S.settings.gDailyNew||5;
+  const dailyCard=`<div class="card pad" style="margin-top:16px">
+    <div class="statline">
+      <div class="stat"><b>${Math.min(gdn,gIntakeToday())}/${gdn}</b><span>nuevas hoy</span></div>
+      <div class="stat"><b>${gNotLearnedCount()}</b><span>por aprender</span></div>
+      <div class="stat"><b>${gLearnedCount()}</b><span>aprendidas</span></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn big" data-act="studyDailyG">Estudiar hoy</button></div>
+    <p class="hint" style="margin:10px 2px 0">Cada día agrega hasta ${gdn} puntos nuevos de los temas que elijas abajo; lo que marques \u201cPor repasar\u201d se acumula hasta que lo sepas.${(gramCfg.cats&&gramCfg.cats.size)?"":" <b>Elige al menos un tema para empezar.</b>"}</p>
+  </div>`;
   let practice;
   if(gramCfg.mode==="quiz"){
-    practice=`${modeSeg}
+    practice=`${dailyCard}${modeSeg}
     <p class="hint" style="margin:12px 2px 0">Preguntas de opción múltiple de toda la gramática: elige la forma o el significado correcto.</p>
     ${selAll}${catChips}
     <div class="label">Cuántas preguntas</div>
@@ -587,7 +630,7 @@ views.grammar=function(){
   } else {
     const gl=gLearnedCount(),gr=gReviewCount(),gt=GPOINTS.length;
     const filters=[["all","Todas"],["review","Por repasar"],["learned","Aprendidas"]];
-    practice=`${modeSeg}
+    practice=`${dailyCard}${modeSeg}
     <p class="hint" style="margin:12px 2px 0">Tarjetas de gramática: mira el patrón, piensa la regla, y marca si la aprendiste o va a repaso.</p>
     <div class="statline" style="margin-top:14px">
       <div class="stat"><b>${gt}</b><span>puntos</span></div>
@@ -644,7 +687,7 @@ afterRender.grammar=function(){
   const ls=$("#lsearch");
   if(ls)ls.addEventListener("input",e=>{lessonQuery=e.target.value;const box=$("#lessonlist");if(box)box.innerHTML=lessonListHTML();});
   $("#app").querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{
-    const k=b.dataset.cat;if(gramCfg.cats.has(k))gramCfg.cats.delete(k);else gramCfg.cats.add(k);render();}));
+    const k=b.dataset.cat;if(gramCfg.cats.has(k))gramCfg.cats.delete(k);else gramCfg.cats.add(k);saveGrammarPick();render();}));
   const gm=$("#app").querySelector('[data-ggroup="gmode"]');
   if(gm)gm.addEventListener("click",e=>{const b=e.target.closest(".chip");if(!b)return;gramCfg.mode=b.dataset.v;render();});
   const cf=$("#app").querySelector('[data-ggroup="cardFilter"]');
@@ -676,15 +719,16 @@ function rubyOf(v){ // furigana word
   return esc(v.jp);
 }
 function exRuby(v){ return v.exJpRuby || esc(v.exJp||""); }
-function startSession(items,mode,dir,daily){
+function startSession(items,mode,dir,daily,dailyKind){
   if(!items||!items.length){toast("No hay tarjetas para esa selección");return;}
   sess={queue:items.map((it,i)=>({...it,_i:i})),pos:0,mode,dir:dir||"jp2es",total:items.length,
-        done:0,correct:0,revealed:false,answered:false,daily:!!daily};
+        done:0,correct:0,revealed:false,answered:false,daily:!!daily,dailyKind:dailyKind||"vocab"};
   document.body.style.overflow="hidden";
   paintSession();
 }
 function endSession(){
   const acc=sess.done?Math.round(sess.correct/sess.done*100):0;
+  const gk=sess&&sess.dailyKind==="grammar";
   const total=sess.done;const wrap=document.createElement("div");
   wrap.className="sess";wrap.id="sessOverlay";
   wrap.innerHTML=`<div class="wrap" style="display:flex;flex-direction:column;height:100%">
@@ -692,9 +736,9 @@ function endSession(){
     <div class="sbody"><div class="card summary">
       <div class="big">${total}</div><div class="lab">tarjetas repasadas</div>
       <div class="statline" style="margin-top:22px">
-        <div class="stat"><b>${learnedTodayCount()}</b><span>aprendidas hoy</span></div>
+        <div class="stat"><b>${gk?gLearnedCount():learnedTodayCount()}</b><span>${gk?"aprendidas":"aprendidas hoy"}</span></div>
         <div class="stat"><b>${S.stats.streak||0}</b><span>racha</span></div>
-        <div class="stat"><b>${notLearnedCount()}</b><span>por aprender</span></div>
+        <div class="stat"><b>${gk?gNotLearnedCount():notLearnedCount()}</b><span>por aprender</span></div>
       </div>
       <div style="margin-top:24px" class="row">
         <button class="btn ghost" data-act="closeSess">Terminar</button>
@@ -710,9 +754,11 @@ function paintSession(){
   const it=sess.queue[sess.pos];sess.revealed=false;sess.answered=false;
   let progW,meta;
   if(sess.daily){
-    const dn=S.settings.dailyNew||5;const intk=Math.min(dn,intakeToday());
+    const gk=sess.dailyKind==="grammar";
+    const dn=gk?(S.settings.gDailyNew||5):(S.settings.dailyNew||5);
+    const intk=Math.min(dn,gk?gIntakeToday():intakeToday());
     if(it.phase==="new"){progW=Math.round(intk/dn*100);meta=`<span class="phase">Nuevas</span> · ${intk}/${dn}`;}
-    else{const nl=notLearnedCount();progW=100;meta=`<span class="phase">Repaso</span> · ${nl} por aprender`;}
+    else{const nl=gk?gNotLearnedCount():notLearnedCount();progW=100;meta=`<span class="phase">Repaso</span> · ${nl} por aprender`;}
   }else{progW=Math.round(sess.pos/sess.total*100);meta=`${sess.pos+1} / ${sess.total}`;}
   const el=document.createElement("div");el.className="sess";el.id="sessOverlay";
   el.innerHTML=`<div class="wrap" style="display:flex;flex-direction:column;height:100%">
@@ -834,15 +880,32 @@ function renderGrammarFlash(host,it){
   const g=it.data;const cat=g.cat;const gc=GCATS[cat]||{};
   host.innerHTML=`<div class="qcard">
     <span class="qtag"><span class="dot" style="background:${gc.color||'var(--muted)'}"></span><span class="jp">${esc(gc.label||"Gramática")}</span></span>
-    <div class="front"><div class="gpat jp">${g.patternRuby||esc(g.pattern)}</div><div class="sub">Toca para ver la regla</div></div>
+    <div class="front"><div class="gstruct">${glossPattern(g.pattern)}</div><div class="sub">Toca para ver el significado y ejemplos</div></div>
     <div id="back"></div>
-    <div class="sfoot" id="foot"><button class="btn" data-act="flip">Mostrar regla</button></div>
+    <div class="sfoot" id="foot"><button class="btn" data-act="flip">Mostrar significado</button></div>
   </div>`;
   const flip=()=>{
     if(sess.revealed)return;sess.revealed=true;
-    const ex=g.exJpRuby?`<div class="ex jp">${g.exJpRuby}</div>`:"";
-    $("#back").innerHTML=`<div class="reveal"><div class="mean">${esc(g.rule)}</div>${ex}</div>`;
+    const key="gp:"+g.id;
+    const ex=g.exJpRuby?`<div class="exlabel">Ejemplo</div><div class="ex jp">${g.exJpRuby}</div>`:"";
+    $("#back").innerHTML=`<div class="reveal"><div class="mean">${esc(g.rule)}</div>${ex}`
+      +`<div class="exlabel" style="margin-top:14px">✍️ Tu ejemplo</div>`
+      +`<textarea class="myex jp" id="myex" rows="2" placeholder="Escribe una oración usando este punto…">${esc(S.myEx[key]||"")}</textarea>`
+      +`<div class="row" style="margin-top:8px"><button class="btn sm line" id="exReview">Revisar con IA</button></div>`
+      +`<div id="exfb" class="aians"></div></div>`;
     $("#foot").innerHTML=learnBar(it);bindLearn(it,null);
+    const myex=$("#myex");
+    if(myex)myex.addEventListener("input",()=>{S.myEx[key]=myex.value;save();});
+    const rv=$("#exReview");
+    if(rv)rv.addEventListener("click",async()=>{
+      const text=(myex&&myex.value.trim())||"";
+      if(!text){toast("Escribe tu oración primero");return;}
+      if(!(S.settings.aiProxy||"").trim()){$("#exfb").innerHTML='<div class="aibubble err">Configura el proxy de IA en Progreso → Asistente de IA.</div>';return;}
+      rv.disabled=true;$("#exfb").innerHTML='<div class="aibubble loading"><span class="aidots"><i></i><i></i><i></i></span>Revisando…</div>';
+      try{const out=await reviewExample(g,text);$("#exfb").innerHTML='<div class="aibubble jp">'+rubyize(out).replace(/\n/g,"<br>")+'</div>';}
+      catch(err){$("#exfb").innerHTML='<div class="aibubble err">'+esc(aiErrMsg(err))+'</div>';}
+      finally{rv.disabled=false;}
+    });
   };
   host.querySelector(".front").addEventListener("click",flip);
   host.querySelector('[data-act="flip"]').addEventListener("click",flip);
@@ -884,7 +947,7 @@ function bindLearn(it,ok){
     if(dec==="learned"){markLearned(it.key);schedule(it.key,ok===false?1:2);}
     else{markReview(it.key);schedule(it.key,0);}
     sess.done++;if(dec==="learned")sess.correct++;
-    if(sess.daily){const nx=nextDailyItem(it.key);if(nx){sess.queue.push({...nx,_i:sess.queue.length});sess.total=sess.queue.length;}}
+    if(sess.daily){const nx=sess.dailyKind==="grammar"?nextDailyGrammar(it.key):nextDailyItem(it.key);if(nx){sess.queue.push({...nx,_i:sess.queue.length});sess.total=sess.queue.length;}}
     else if(dec==="review"){const clone={...it};delete clone._shuf;sess.queue.push(clone);} // keep studying it now
     sess.pos++;paintSession();
   }));
@@ -990,14 +1053,16 @@ views.stats=function(){
     <div class="field" style="margin-top:0"><label>Palabras nuevas por día</label><input class="inp" id="s_new" type="number" min="1" max="50" value="${S.settings.dailyNew}"></div>
     <p class="hint" style="margin:8px 2px 0">Cada día el estudio incorpora palabras nuevas hasta juntar esta cantidad de <b>no aprendidas</b>; luego solo repasa esas.</p>
     <div class="field"><label>Meta de palabras aprendidas por día</label><input class="inp" id="s_learn" type="number" min="1" max="100" value="${S.settings.learnGoal}"></div>
+    <div class="field"><label>Puntos de gramática nuevos por día</label><input class="inp" id="s_gnew" type="number" min="1" max="50" value="${S.settings.gDailyNew||5}"></div>
     <div style="margin-top:14px"><button class="btn" data-act="saveSettings">Guardar ajustes</button></div>
   </div>
-  <h2 class="sec">Asistente de IA (Gemini)</h2>
+  <h2 class="sec">Asistente de IA (OpenAI vía proxy)</h2>
   <div class="card pad">
-    <p class="hint" style="margin-top:0">Durante el estudio puedes preguntarle a Gemini sobre cualquier tarjeta (vocabulario o gramática). Consigue una clave gratis en <b>aistudio.google.com/app/apikey</b> y pégala aquí. Se guarda solo en este teléfono; no se sube a ninguna parte.</p>
-    <div class="field"><label>Clave API de Gemini</label><input class="inp" id="ai_key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…" value="${esc(S.settings.aiKey||"")}"></div>
-    <div class="field"><label>Modelo</label><input class="inp" id="ai_model" autocapitalize="off" spellcheck="false" placeholder="gemini-2.5-flash" value="${esc(S.settings.aiModel||"gemini-2.5-flash")}"></div>
-    <p class="hint" style="margin:8px 2px 0">Si las respuestas salen vacías, prueba con <b>gemini-2.5-flash-lite</b>. El plan gratis tiene límite por minuto/día; para uso personal sobra.</p>
+    <p class="hint" style="margin-top:0">La IA usa tu cuenta de OpenAI a través de un pequeño proxy (Cloudflare Worker) para no exponer tu clave. Pega aquí la URL del Worker. Mira <b>worker.js</b> e <b>INSTRUCCIONES</b> para montarlo (es gratis).</p>
+    <div class="field"><label>URL del proxy (Cloudflare Worker)</label><input class="inp" id="ai_proxy" autocapitalize="off" spellcheck="false" placeholder="https://tu-worker.workers.dev" value="${esc(S.settings.aiProxy||"")}"></div>
+    <div class="field"><label>Clave del proxy (opcional)</label><input class="inp" id="ai_token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="si configuraste APP_TOKEN" value="${esc(S.settings.aiToken||"")}"></div>
+    <div class="field"><label>Modelo</label><input class="inp" id="ai_model" autocapitalize="off" spellcheck="false" placeholder="gpt-4o-mini" value="${esc(S.settings.aiModel||"gpt-4o-mini")}"></div>
+    <p class="hint" style="margin:8px 2px 0">Modelo económico sugerido: <b>gpt-4o-mini</b> (o el que tengas disponible en tu panel de OpenAI).</p>
     <label class="aitoggle"><input type="checkbox" id="ai_on" ${S.settings.aiOn!==false?"checked":""}> Mostrar el botón \u{1F916} durante el estudio</label>
     <div style="margin-top:14px"><button class="btn" data-act="saveAI">Guardar asistente</button></div>
   </div>
@@ -1051,14 +1116,15 @@ document.body.addEventListener("click",e=>{
     case "quick-type":{const items=shuffle(vocabAll().filter(v=>v.reading&&v.reading!==v.jp)).slice(0,15).map(v=>({key:"v:"+v.id,type:"vocab",data:v}));startSession(items,"type","jp2es");break;}
     case "startVocab":{const list=pickVocab().map(v=>({key:"v:"+v.id,type:"vocab",data:v}));startSession(list,vocabCfg.mode,vocabCfg.dir);break;}
     case "startGrammar":{const list=pickGrammarQuiz().map(q=>({key:q.gp?"gp:"+q.gp.id:"g:"+q.id,type:"grammar",data:q}));if(!list.length){toast("Elige alguna categoría");break;}startSession(list,"mcq");break;}
-    case "startGrammarCards":{const list=pickGrammarCards().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));if(!list.length){toast("No hay tarjetas para esa selección");break;}startSession(list,"flip");break;}
-    case "gCatAll":{const cs=grammarCats(gramCfg.mode);const all=cs.every(c=>gramCfg.cats.has(c.slug));cs.forEach(c=>{if(all)gramCfg.cats.delete(c.slug);else gramCfg.cats.add(c.slug);});render();break;}
+    case "startGrammarCards":{const list=pickGrammarCards().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));if(!list.length){toast("Elige algún tema o cambia el filtro");break;}startSession(list,"flip");break;}
+    case "studyDailyG":{const first=nextDailyGrammar(null);if(!first){toast((gramCfg.cats&&gramCfg.cats.size)?"¡Gramática al día! 🎉":"Elige algún tema abajo");break;}startSession([first],"flip",null,true,"grammar");break;}
+    case "gCatAll":{const cs=grammarCats(gramCfg.mode);const all=cs.every(c=>gramCfg.cats.has(c.slug));cs.forEach(c=>{if(all)gramCfg.cats.delete(c.slug);else gramCfg.cats.add(c.slug);});saveGrammarPick();render();break;}
     case "toggleFb":{gramCfg.feedback=!gramCfg.feedback;render();break;}
     case "lessonOpen":{lessonOpen=a.dataset.id;render();window.scrollTo(0,0);break;}
     case "lessonBack":{lessonOpen=null;render();window.scrollTo(0,0);break;}
     case "closeSess":closeSession();break;
     case "aiAsk":openAIPanel();break;
-    case "saveAI":{const k=$("#ai_key"),md=$("#ai_model"),on=$("#ai_on");if(k)S.settings.aiKey=k.value.trim();if(md)S.settings.aiModel=(md.value.trim()||"gemini-2.5-flash");if(on)S.settings.aiOn=on.checked;save();toast("Asistente de IA guardado");break;}
+    case "saveAI":{const px=$("#ai_proxy"),tk=$("#ai_token"),md=$("#ai_model"),on=$("#ai_on");if(px)S.settings.aiProxy=px.value.trim();if(tk)S.settings.aiToken=tk.value.trim();if(md)S.settings.aiModel=(md.value.trim()||"gpt-4o-mini");if(on)S.settings.aiOn=on.checked;save();toast("Asistente de IA guardado");break;}
     case "againSess":{closeSessionSilent();
       if(currentNav==="grammar"){
         if(gramCfg.mode==="cards"){const list=pickGrammarCards().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));startSession(list,"flip");}
@@ -1076,7 +1142,7 @@ document.body.addEventListener("click",e=>{
     case "delVocab":{if(confirm("¿Borrar esta palabra?")){S.userVocab=S.userVocab.filter(v=>v.id!==a.dataset.id);delete S.srs["v:"+a.dataset.id];delete S.learn["v:"+a.dataset.id];save();render();toast("Palabra borrada");}break;}
     case "delGrammar":{if(confirm("¿Borrar esta pregunta?")){S.userGrammar=S.userGrammar.filter(q=>q.id!==a.dataset.id);delete S.srs["g:"+a.dataset.id];save();render();toast("Pregunta borrada");}break;}
     case "unhide":{delete S.hidden[a.dataset.key];save();render();break;}
-    case "saveSettings":{const dn=parseInt($("#s_new").value);const lg=parseInt($("#s_learn").value);S.settings.dailyNew=clamp(isNaN(dn)?5:dn,1,50);S.settings.learnGoal=clamp(isNaN(lg)?8:lg,1,100);save();toast("Ajustes guardados");go("home");break;}
+    case "saveSettings":{const dn=parseInt($("#s_new").value);const lg=parseInt($("#s_learn").value);const gn=parseInt(($("#s_gnew")||{}).value);S.settings.dailyNew=clamp(isNaN(dn)?5:dn,1,50);S.settings.learnGoal=clamp(isNaN(lg)?8:lg,1,100);if(!isNaN(gn))S.settings.gDailyNew=clamp(gn,1,50);save();toast("Ajustes guardados");go("home");break;}
     case "export":doExport();break;
     case "importBtn":$("#importFile").click();break;
     case "resetSrs":{if(confirm("¿Reiniciar el progreso? Se borran el repaso espaciado y el estado de aprendidas; tu vocabulario y gramática se conservan.")){S.srs={};S.learn={};S.stats={streak:0,best:0,last:null,reviews:0,history:{}};save();toast("Progreso reiniciado");go("home");}break;}
@@ -1160,59 +1226,60 @@ function aiContext(it){
   if(q.explanation)t+="\nExplicación: "+q.explanation;
   return{text:t,chips:["¿Por qué es la correcta?","Desglosa la frase","Dame 2 ejemplos más","Diferencia con las otras opciones"]};
 }
-async function askGemini(question,context){
-  const key=(S.settings.aiKey||"").trim();
-  if(!key)throw new Error("nokey");
-  const model=(S.settings.aiModel||"gemini-2.5-flash").trim();
-  const sys="Eres un tutor de japonés para un estudiante hispanohablante de nivel intermedio. "
-    +"Responde SIEMPRE en español, breve y claro, sin tablas. Cuando escribas japonés, pon la lectura "
-    +"de cada kanji entre paréntesis justo después, así: 食(た)べる. "
-    +"Esta es la tarjeta que está estudiando ahora:\n"+context;
-  const url="https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent";
-  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},
-    body:JSON.stringify({system_instruction:{parts:[{text:sys}]},
-      contents:[{role:"user",parts:[{text:question}]}],
-      generationConfig:{temperature:0.4,maxOutputTokens:1024}})});
+const SYS_TUTOR="Eres un tutor de japonés para un estudiante hispanohablante de nivel intermedio. Responde SIEMPRE en español, breve y claro, sin tablas. Cuando escribas japonés, pon la lectura de cada kanji entre paréntesis justo después, así: 食(た)べる.";
+function aiMsgs(sys,user){return [{role:"system",content:sys},{role:"user",content:user}];}
+async function askAI(messages){
+  const proxy=(S.settings.aiProxy||"").trim();
+  if(!proxy)throw new Error("noai");
+  const model=(S.settings.aiModel||"gpt-4o-mini").trim();
+  const headers={"Content-Type":"application/json"};
+  const tok=(S.settings.aiToken||"").trim();if(tok)headers["x-app-token"]=tok;
+  const r=await fetch(proxy,{method:"POST",headers,body:JSON.stringify({model,messages,temperature:0.4,max_tokens:700})});
   if(!r.ok){let m="";try{const j=await r.json();m=j&&j.error&&j.error.message||"";}catch(e){}throw new Error("http:"+r.status+(m?" · "+m:""));}
-  const d=await r.json();const c=d.candidates&&d.candidates[0];
-  const txt=c&&c.content&&c.content.parts?c.content.parts.map(p=>p.text||"").join(""):"";
-  if(!txt)throw new Error("empty:"+((c&&c.finishReason)||"?"));
+  const d=await r.json();
+  const txt=d&&d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content||"";
+  if(!txt)throw new Error("empty");
   return txt.trim();
+}
+function reviewExample(g,text){
+  const u="Punto de gramática: "+g.pattern+" — "+g.rule+"\nEl estudiante escribió esta oración para practicarlo: «"+text+"»\nDile en español si es correcta y natural. Si hay errores, corrígela y explica brevemente por qué. Si está bien, confírmalo y ofrece una pequeña variación.";
+  return askAI(aiMsgs(SYS_TUTOR,u));
 }
 function aiErrMsg(err){
   const m=String(err&&err.message||err);
-  if(m==="nokey")return "Falta la clave de Gemini. Ponla en Progreso → Asistente de IA.";
-  if(m.indexOf("empty")===0)return "La IA no devolvió texto ("+m.slice(6)+"). Reformula la pregunta o cambia de modelo en Ajustes.";
-  if(m.indexOf("http:401")===0||m.indexOf("http:403")===0)return "Clave inválida o restringida. Revisa tu API key y sus restricciones. ["+m+"]";
-  if(m.indexOf("http:429")===0)return "Límite del plan gratis por ahora. Espera un poco y reinténtalo. ["+m+"]";
-  if(m.indexOf("http:404")===0||m.indexOf("http:400")===0)return "Modelo no válido. Revisa el nombre del modelo en Ajustes. ["+m+"]";
-  if(/Failed to fetch|NetworkError|Load failed/i.test(m))return "Sin conexión: la IA necesita internet (el resto del app funciona offline).";
+  if(m==="noai")return "Configura el proxy de IA en Progreso → Asistente de IA.";
+  if(m==="empty")return "La IA no devolvió texto. Reinténtalo o prueba otro modelo en Ajustes.";
+  if(m.indexOf("http:401")===0||m.indexOf("http:403")===0)return "El proxy rechazó la petición (revisa la clave del proxy / APP_TOKEN). ["+m+"]";
+  if(m.indexOf("http:429")===0)return "Límite de OpenAI por ahora. Espera un poco y reinténtalo. ["+m+"]";
+  if(m.indexOf("http:400")===0||m.indexOf("http:404")===0)return "Petición rechazada: revisa el nombre del modelo en Ajustes. ["+m+"]";
+  if(m.indexOf("http:5")===0)return "El proxy u OpenAI devolvieron un error temporal. Reinténtalo. ["+m+"]";
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m))return "No se pudo contactar el proxy: revisa la URL y tu conexión.";
   return "Error: "+m;
 }
 function openAIPanel(){
   if(!sess)return;const it=sess.queue[sess.pos];const ctx=aiContext(it);
-  const hasKey=!!(S.settings.aiKey||"").trim();
+  const hasAI=!!(S.settings.aiProxy||"").trim();
   const el=document.createElement("div");el.className="aiov";el.id="aiOverlay";
   el.innerHTML='<div class="aipanel">'
     +'<div class="aihead"><span>\u{1F916} Preguntar a la IA</span><button class="x" id="aiClose" aria-label="Cerrar">✕</button></div>'
     +'<div class="aictx jp">'+rubyize(ctx.text).replace(/\n/g,"<br>")+'</div>'
-    +(hasKey
+    +(hasAI
       ?'<div class="aichips">'+ctx.chips.map(c=>'<button class="aichip" data-q="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div>'
         +'<textarea class="aiin" id="aiq" rows="2" placeholder="Escribe tu pregunta sobre esta tarjeta…"></textarea>'
         +'<div class="row" style="margin-top:10px"><button class="btn" id="aiSend">Preguntar</button></div>'
         +'<div id="aians" class="aians"></div>'
-      :'<div class="ainokey">Para usar la IA, pega tu clave gratis de Gemini en <b>Progreso → Asistente de IA</b>. Se guarda solo en este teléfono.</div>')
+      :'<div class="ainokey">Para usar la IA, configura el proxy de OpenAI en <b>Progreso \u2192 Asistente de IA</b>. Mira worker.js e INSTRUCCIONES para montarlo (gratis).</div>')
     +'</div>';
   document.body.appendChild(el);
   const close=()=>el.remove();
   el.addEventListener("click",e=>{if(e.target===el)close();});
   $("#aiClose").addEventListener("click",close);
-  if(!hasKey)return;
+  if(!hasAI)return;
   const qbox=$("#aiq"),ansBox=$("#aians");let busy=false;
   const send=async()=>{
     const q=qbox.value.trim();if(!q||busy)return;busy=true;$("#aiSend").disabled=true;
     ansBox.innerHTML='<div class="aibubble loading"><span class="aidots"><i></i><i></i><i></i></span>Pensando…</div>';
-    try{const out=await askGemini(q,ctx.text);ansBox.innerHTML='<div class="aibubble jp">'+rubyize(out).replace(/\n/g,"<br>")+'</div>';}
+    try{const out=await askAI(aiMsgs(SYS_TUTOR+"\nTarjeta actual:\n"+ctx.text,q));ansBox.innerHTML='<div class="aibubble jp">'+rubyize(out).replace(/\n/g,"<br>")+'</div>';}
     catch(err){ansBox.innerHTML='<div class="aibubble err">'+esc(aiErrMsg(err))+'</div>';}
     finally{busy=false;const b=$("#aiSend");if(b)b.disabled=false;}
   };
