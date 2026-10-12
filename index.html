@@ -600,7 +600,7 @@ views.grammar=function(){
   const modeSeg=`<div class="seg" data-ggroup="gmode" style="margin-top:16px">
       <button class="chip" data-v="quiz" aria-pressed="${gramCfg.mode==='quiz'}">Quiz</button>
       <button class="chip" data-v="cards" aria-pressed="${gramCfg.mode==='cards'}">Tarjetas</button></div>`;
-  const selAll=`<div class="label" style="margin-top:16px">Temas que quieres estudiar <button class="btn sm ghost" data-act="gCatAll" style="width:auto;padding:4px 10px">${cats.length&&cats.every(c=>gramCfg.cats.has(c.slug))?"Quitar todos":"Seleccionar todos"}</button></div>`;
+  const selAll=`<div class="label" style="margin-top:16px">Filtrar por tema (opcional) <button class="btn sm ghost" data-act="gCatAll" style="width:auto;padding:4px 10px">${cats.length&&cats.every(c=>gramCfg.cats.has(c.slug))?"Quitar todos":"Seleccionar todos"}</button></div>`;
   const catChips=`<div class="topicgrid">${cats.map(c=>`
       <button class="topicbtn" data-cat="${c.slug}" aria-pressed="${gramCfg.cats.has(c.slug)}">
         <span class="dot" style="width:11px;height:11px;border-radius:50%;background:${c.color}"></span>
@@ -608,14 +608,16 @@ views.grammar=function(){
         <span class="ct">${c.count}</span>
       </button>`).join("")}</div>`;
   const gdn=S.settings.gDailyNew||5;
+  const gReviewN=gNotLearnedCount();
   const dailyCard=`<div class="card pad" style="margin-top:16px">
     <div class="statline">
       <div class="stat"><b>${Math.min(gdn,gIntakeToday())}/${gdn}</b><span>nuevas hoy</span></div>
-      <div class="stat"><b>${gNotLearnedCount()}</b><span>por aprender</span></div>
+      <div class="stat"><b>${gReviewN}</b><span>por aprender</span></div>
       <div class="stat"><b>${gLearnedCount()}</b><span>aprendidas</span></div>
     </div>
     <div style="margin-top:14px"><button class="btn big" data-act="studyDailyG">Estudiar hoy</button></div>
-    <p class="hint" style="margin:10px 2px 0">Cada día agrega hasta ${gdn} puntos nuevos de los temas que elijas abajo; lo que marques \u201cPor repasar\u201d se acumula hasta que lo sepas.${(gramCfg.cats&&gramCfg.cats.size)?"":" <b>Elige al menos un tema para empezar.</b>"}</p>
+    <button class="btn line" data-act="studyReviewG" style="margin-top:12px">Repasar no aprendidas${gReviewN?` · ${gReviewN}`:""}</button>
+    <p class="hint" style="margin:10px 2px 0">Cada día agrega hasta ${gdn} puntos nuevos; lo que marques \u201cPor repasar\u201d (el botón rojo) se acumula hasta que lo sepas. Abajo puedes filtrar por tema (opcional).</p>
   </div>`;
   let practice;
   if(gramCfg.mode==="quiz"){
@@ -629,13 +631,14 @@ views.grammar=function(){
     <div style="margin-top:20px"><button class="btn big" data-act="startGrammar">Empezar quiz</button></div>`;
   } else {
     const gl=gLearnedCount(),gr=gReviewCount(),gt=GPOINTS.length;
-    const filters=[["all","Todas"],["review","Por repasar"],["learned","Aprendidas"]];
+    const filters=[["all","Todas"],["review","Por repasar"],["learned","Aprendidas"],["star","Favoritas"]];
     practice=`${dailyCard}${modeSeg}
     <p class="hint" style="margin:12px 2px 0">Tarjetas de gramática: mira el patrón, piensa la regla, y marca si la aprendiste o va a repaso.</p>
     <div class="statline" style="margin-top:14px">
       <div class="stat"><b>${gt}</b><span>puntos</span></div>
       <div class="stat"><b>${gl}</b><span>aprendidos</span></div>
       <div class="stat"><b>${gr}</b><span>por repasar</span></div>
+      <div class="stat"><b>${GPOINTS.filter(g=>S.star["gp:"+g.id]).length}</b><span>favoritas</span></div>
     </div>
     ${selAll}${catChips}
     <div class="label">Mostrar</div>
@@ -696,16 +699,19 @@ afterRender.grammar=function(){
   if(ag)ag.addEventListener("click",e=>{const b=e.target.closest(".chip");if(!b)return;const v=b.dataset.v;gramCfg.amount=(v==="all")?"all":parseInt(v);render();});
 };
 function pickGrammarQuiz(){
-  const a=grammarAll().filter(q=>gramCfg.cats.has(qCat(q)));
-  const b=GPOINT_Q.filter(q=>gramCfg.cats.has(q._cat));
+  const useAll=!gramCfg.cats||gramCfg.cats.size===0;
+  const a=grammarAll().filter(q=>useAll||gramCfg.cats.has(qCat(q)));
+  const b=GPOINT_Q.filter(q=>useAll||gramCfg.cats.has(q._cat));
   let list=shuffle(a.concat(b));
   if(gramCfg.amount!=="all")list=list.slice(0,gramCfg.amount);
   return list;
 }
 function pickGrammarCards(){
-  let list=GPOINTS.filter(g=>gramCfg.cats.has(g.cat));
+  const useAll=!gramCfg.cats||gramCfg.cats.size===0;
+  let list=GPOINTS.filter(g=>useAll||gramCfg.cats.has(g.cat));
   if(gramCfg.cardFilter==="review")list=list.filter(g=>{const s=S.learn["gp:"+g.id];return s&&s.status==="review";});
   else if(gramCfg.cardFilter==="learned")list=list.filter(g=>{const s=S.learn["gp:"+g.id];return s&&s.status==="learned";});
+  else if(gramCfg.cardFilter==="star")list=list.filter(g=>S.star["gp:"+g.id]);
   list=shuffle(list);
   if(gramCfg.amount!=="all")list=list.slice(0,gramCfg.amount);
   return list;
@@ -879,7 +885,7 @@ function renderGrammarCard(host,it){
 function renderGrammarFlash(host,it){
   const g=it.data;const cat=g.cat;const gc=GCATS[cat]||{};
   host.innerHTML=`<div class="qcard">
-    <span class="qtag"><span class="dot" style="background:${gc.color||'var(--muted)'}"></span><span class="jp">${esc(gc.label||"Gramática")}</span></span>
+    <span class="qtag"><span class="dot" style="background:${gc.color||'var(--muted)'}"></span><span class="jp">${esc(gc.label||"Gramática")}</span>${starBtn("gp:"+g.id)}</span>
     <div class="front"><div class="gstruct">${glossPattern(g.pattern)}</div><div class="sub">Toca para ver el significado y ejemplos</div></div>
     <div id="back"></div>
     <div class="sfoot" id="foot"><button class="btn" data-act="flip">Mostrar significado</button></div>
@@ -1028,6 +1034,9 @@ views.stats=function(){
   const learned=learnedCount();const learnedToday=learnedTodayCount();
   const byDate={};learnedVocabList().forEach(x=>{const d=x.on||"";(byDate[d]=byDate[d]||[]).push(x.v);});
   const dates=Object.keys(byDate).sort().reverse();
+  const gByDate={};gLearnedList().forEach(x=>{const d=x.on||"";(gByDate[d]=gByDate[d]||[]).push(x.g);});
+  const gdates=Object.keys(gByDate).sort().reverse();
+  const gLearnedToday=gLearnedList().filter(x=>x.on===t).length;
   const wd=["D","L","M","M","J","V","S"];
   return `
   <div class="statline" style="margin-top:8px">
@@ -1035,6 +1044,7 @@ views.stats=function(){
     <div class="stat"><b>${S.stats.streak||0}</b><span>racha actual</span></div>
     <div class="stat"><b>${S.stats.best||0}</b><span>mejor racha</span></div>
   </div>
+  <h2 class="sec">Vocabulario</h2>
   <div class="statline">
     <div class="stat"><b>${learned}</b><span>aprendidas</span></div>
     <div class="stat"><b>${learnedToday}</b><span>aprendidas hoy</span></div>
@@ -1045,9 +1055,18 @@ views.stats=function(){
     <div class="spark">${days.map(d=>{const v=hist[d]||0;const h=Math.round(v/max*100);return `<div class="b"><i style="height:${v?Math.max(6,h):0}%"></i></div>`;}).join("")}</div>
     <div class="sparkrow">${days.map(d=>{const dd=new Date(d);return `<div>${wd[dd.getDay()]}<div style="color:var(--ink);font-weight:700;font-size:12px">${hist[d]||0}</div></div>`;}).join("")}</div>
   </div>
-  <h2 class="sec">Aprendidas por fecha</h2>
+  <h2 class="sec">Vocabulario por fecha</h2>
   ${dates.length ? dates.map(d=>`<div class="dategrp"><div class="dh"><b>${fmtDate(d)}</b><span>${byDate[d].length} ${byDate[d].length===1?"palabra":"palabras"}</span></div><div class="wchips">${byDate[d].map(v=>`<span class="wchip jp">${esc(v.jp)}<small>${esc(v.es)}</small></span>`).join("")}</div></div>`).join("")
     : `<div class="card pad"><p class="hint" style="margin:0">Aún no marcaste ninguna palabra como aprendida. Durante el estudio, pulsa “Ya la sé” cuando la domines y aparecerá aquí por fecha.</p></div>`}
+  <h2 class="sec">Gramática</h2>
+  <div class="statline">
+    <div class="stat"><b>${gLearnedCount()}</b><span>aprendidos</span></div>
+    <div class="stat"><b>${gLearnedToday}</b><span>aprendidos hoy</span></div>
+    <div class="stat"><b>${gReviewCount()}</b><span>por repasar</span></div>
+  </div>
+  <h2 class="sec">Gramática por fecha</h2>
+  ${gdates.length ? gdates.map(d=>`<div class="dategrp"><div class="dh"><b>${fmtDate(d)}</b><span>${gByDate[d].length} ${gByDate[d].length===1?"punto":"puntos"}</span></div><div class="wchips">${gByDate[d].map(g=>`<span class="wchip jp">${esc(g.pattern)}<small>${esc(g.catLabel||"")}</small></span>`).join("")}</div></div>`).join("")
+    : `<div class="card pad"><p class="hint" style="margin:0">Aún no marcaste ningún punto de gramática como aprendido. En las tarjetas, pulsa “Ya la sé” y aparecerá aquí.</p></div>`}
   <h2 class="sec">Ajustes de estudio</h2>
   <div class="card pad">
     <div class="field" style="margin-top:0"><label>Palabras nuevas por día</label><input class="inp" id="s_new" type="number" min="1" max="50" value="${S.settings.dailyNew}"></div>
@@ -1117,7 +1136,8 @@ document.body.addEventListener("click",e=>{
     case "startVocab":{const list=pickVocab().map(v=>({key:"v:"+v.id,type:"vocab",data:v}));startSession(list,vocabCfg.mode,vocabCfg.dir);break;}
     case "startGrammar":{const list=pickGrammarQuiz().map(q=>({key:q.gp?"gp:"+q.gp.id:"g:"+q.id,type:"grammar",data:q}));if(!list.length){toast("Elige alguna categoría");break;}startSession(list,"mcq");break;}
     case "startGrammarCards":{const list=pickGrammarCards().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));if(!list.length){toast("Elige algún tema o cambia el filtro");break;}startSession(list,"flip");break;}
-    case "studyDailyG":{const first=nextDailyGrammar(null);if(!first){toast((gramCfg.cats&&gramCfg.cats.size)?"¡Gramática al día! 🎉":"Elige algún tema abajo");break;}startSession([first],"flip",null,true,"grammar");break;}
+    case "studyDailyG":{const first=nextDailyGrammar(null);if(!first){toast("¡Gramática al día! 🎉");break;}startSession([first],"flip",null,true,"grammar");break;}
+    case "studyReviewG":{const list=gReviewSet().map(g=>({key:"gp:"+g.id,type:"gflash",data:g}));if(!list.length){toast("No tienes gramática por repasar 🎉");break;}startSession(shuffle(list),"flip");break;}
     case "gCatAll":{const cs=grammarCats(gramCfg.mode);const all=cs.every(c=>gramCfg.cats.has(c.slug));cs.forEach(c=>{if(all)gramCfg.cats.delete(c.slug);else gramCfg.cats.add(c.slug);});saveGrammarPick();render();break;}
     case "toggleFb":{gramCfg.feedback=!gramCfg.feedback;render();break;}
     case "lessonOpen":{lessonOpen=a.dataset.id;render();window.scrollTo(0,0);break;}
